@@ -1,0 +1,18 @@
+services:
+  app:
+    image: python:3.11.11-slim
+    working_dir: /app
+    command: ["python src/api.py"]
+    volumes:
+      - .:/app
+    ports:
+      - 7860
+
+  api:
+    image: python:3.11.11-slim
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: ["uvicorn", "src.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - 8000

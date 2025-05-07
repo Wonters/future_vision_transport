@@ -1,45 +1,73 @@
 import numpy as np
+import torch
+import pickle
+import base64
+from fastapi.testclient import TestClient
 from PIL import Image
 from glob import glob
-from src.train import SegmentedVgg16Wrapper
-from src.utils import degrade_png_quality, group_masked
+from src.wrapper import SegmentedVgg16Wrapper, SegmentedDilatednetWrapper, SegmentedUnetWrapper
+from src.utils import degrade_png_quality, group_masked, iou_score, CATEGORIES_MASK
+from src.api import app
+
+IMAGE = Image.open('zurich/annotat/zurich_000000_000019_leftImg8bit.png')
+MASK = Image.open('zurich/segmented/zurich_000000_000019_gtFine_labelIds.png')
 
 
 def test_degrade_png_quality():
-    image = Image.open('zurich/annotat/zurich_000000_000019_leftImg8bit.png')
-    degraded_image = degrade_png_quality(image, quality=5)
+    degraded_image = degrade_png_quality(IMAGE, quality=5)
     assert degraded_image.mode == 'RGB'
 
 def test_degrade_png_quality_2():
-    image = Image.open('zurich/segmented/zurich_000000_000019_gtFine_labelIds.png')
-    degraded_image = degrade_png_quality(image, quality=5, mode="L")
+    degraded_image = degrade_png_quality(MASK, quality=5, mode="L")
     assert degraded_image.mode == 'L'
 
 def test_group_mask():
-    img = Image.open("zurich/annotat/zurich_000069_000019_leftImg8bit.png")
-    mask = Image.open("zurich/segmented/zurich_000069_000019_gtFine_labelIds.png")
-    mask = np.array(mask)
-    print(mask.shape)
-    np.unique(mask)
-    print(mask[(mask == 25) | (mask == 24)].shape)
+    """
+    Test the mask if it contains human informations
+    :return:
+    """
+    mask = torch.from_numpy(np.array(MASK))
+    mask = mask.unsqueeze(0)
     mask_ = group_masked(mask)
-    print(mask_[(mask_ == 25) | (mask_ == 24)].shape)
+    for cat_num, cat_value in enumerate(CATEGORIES_MASK.values()):
+        assert np.array_equal(mask_ == cat_num, np.isin(np.array(MASK), cat_value))
+
+def test_group_mask_2():
+    """
+    Test show the mask on the original image
+    :return:
+    """
+    mask = torch.from_numpy(np.array(MASK))
+    mask = mask.unsqueeze(0)
+    mask_ = group_masked(mask, with_cat_number=True)
+    model = SegmentedVgg16Wrapper()
+    #model.visualize(image=IMAGE, mask=mask_).show()
+    assert model.visualize(image=IMAGE, mask=mask_).size == (2048, 1024)
+
+def test_iou_score():
+    mask1 = torch.from_numpy(np.array(MASK))
+    mask1 = mask1.unsqueeze(0)
+    iou = iou_score(mask1, mask1)
+    assert iou.item() == 1
+
+def test_fastapi_server():
+    client = TestClient(app)
+    rep = client.post("/predict", json={'pickle_data':base64.b64encode(pickle.dumps(MASK)).decode('utf-8')})
+    print(rep.text)
 
 
-class TestWrapper:
+class BaseWrapperTest:
+    model_class = SegmentedVgg16Wrapper
     @classmethod
     def setup_class(cls):
         """"""
-        images = glob('zurich/annotat/*.png')
-        masks = glob('zurich/segmented/*labelIds.png')
-        cls.model = SegmentedVgg16Wrapper(x_data=images, y_data=masks, degradation=5)
+        cls.model = cls.model_class(x_data=[IMAGE], y_data=[MASK], degradation=5)
+
+class TestSegmentedVgg16Wrapper(BaseWrapperTest):
 
     def test_dataset(self):
         """"""
         for image, mask in self.model.dataloader:
-            masks = mask.cpu().numpy()
-            print(masks.shape, np.where(masks > 0))
-            print(mask[mask==7].shape)
             break
 
     def test_train(self):
@@ -48,8 +76,22 @@ class TestWrapper:
 
     def test_predict(self):
         """"""
-        output = self.model.predict(['zurich/annotat/zurich_000000_000019_leftImg8bit.png'])
+        output = self.model.predict([IMAGE])
         output = output.detach().cpu().numpy()
         assert output.shape == (1, 1024, 2048, 8)
+        self.model.visualize(IMAGE, output[0,...]).show()
 
-        Image.fromarray(output[0]).show()
+class TestSegmentedUnetWrapper(BaseWrapperTest):
+    model_class = SegmentedDilatednetWrapper
+
+    def test_train(self):
+        """"""
+        self.model.train()
+
+
+class TestUnetWrapper(BaseWrapperTest):
+    model_class = SegmentedUnetWrapper
+
+    def test_train(self):
+        """"""
+        self.model.train()

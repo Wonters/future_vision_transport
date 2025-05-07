@@ -1,18 +1,44 @@
-import gradio as gr
+import base64
+import logging
+import pickle
+from PIL.PngImagePlugin import PngImageFile
+from pydantic import BaseModel
+from fastapi import FastAPI, Request
+from src.wrapper import SegmentedVgg16Wrapper
+
+logger = logging.getLogger(__name__)
 
 
-# Exemple de fonction de prédiction (à remplacer par votre propre modèle)
-def predict_image(image):
-    # Par exemple, on retourne la taille de l'image comme "prédiction"
-    return f"Taille de l'image : {image.size}"
+app = FastAPI()
+@app.get("/")
+def readme():
+    return "ok"
 
-# Création de l'interface
-interface = gr.Interface(
-    fn=predict_image,
-    inputs=gr.Image(type="pil"),
-    outputs=[gr.Image(type="pil", label="Image annotée"), gr.Textbox(label="Résultat JSON")],
-    title="Prédicteur de ",
-    description="Uploadez une image puis cliquez sur Predict."
-)
+class Image(BaseModel):
+    """
+    Schema of the input image
+    """
+    pickle_data: str
 
-interface.launch()
+    def decode(self) -> PngImageFile:
+        """
+        Unpickle the image to get a PIL Image object
+        :return:
+        """
+        return pickle.loads(base64.b64decode(self.pickle_data.encode()))
+
+@app.post("/predict")
+async def predict(request: Request, image: Image):
+    """
+    Receive a pickled image and compute a segmentation
+    :param request:
+    :param image:
+    :return:
+    """
+    logger.info("Launch prediction")
+    wrapper = SegmentedVgg16Wrapper(x_data=[], y_data=[])
+    output = wrapper.predict([image.decode()])
+    return base64.b64decode(pickle.dumps(wrapper.visualize(image, output)))
+
+
+
