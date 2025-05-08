@@ -14,7 +14,7 @@ app = FastAPI()
 def readme():
     return "ok"
 
-class Image(BaseModel):
+class ImageModel(BaseModel):
     """
     Schema of the input image
     """
@@ -28,7 +28,7 @@ class Image(BaseModel):
         return pickle.loads(base64.b64decode(self.pickle_data.encode()))
 
 @app.post("/predict")
-async def predict(request: Request, image: Image):
+async def predict(request: Request, image: ImageModel):
     """
     Receive a pickled image and compute a segmentation
     :param request:
@@ -36,9 +36,10 @@ async def predict(request: Request, image: Image):
     :return:
     """
     logger.info("Launch prediction")
-    wrapper = SegmentedVgg16Wrapper(x_data=[], y_data=[])
-    output = wrapper.predict([image.decode()])
-    return base64.b64decode(pickle.dumps(wrapper.visualize(image, output)))
+    wrapper = SegmentedVgg16Wrapper()
+    pil_image = image.decode()
+    output = wrapper.predict([pil_image])
+    return base64.b64encode(pickle.dumps(wrapper.visualize(pil_image, output.cpu().detach().numpy()[0,...])))
 
 
 

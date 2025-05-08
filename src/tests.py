@@ -2,6 +2,8 @@ import numpy as np
 import torch
 import pickle
 import base64
+
+from PIL.PngImagePlugin import PngImageFile
 from fastapi.testclient import TestClient
 from PIL import Image
 from glob import glob
@@ -52,8 +54,8 @@ def test_iou_score():
 
 def test_fastapi_server():
     client = TestClient(app)
-    rep = client.post("/predict", json={'pickle_data':base64.b64encode(pickle.dumps(MASK)).decode('utf-8')})
-    print(rep.text)
+    rep = client.post("/predict", json={'pickle_data':base64.b64encode(pickle.dumps(IMAGE)).decode('utf-8')})
+    assert isinstance(pickle.loads(base64.b64decode(rep.text)), Image.Image)
 
 
 class BaseWrapperTest:
@@ -61,7 +63,7 @@ class BaseWrapperTest:
     @classmethod
     def setup_class(cls):
         """"""
-        cls.model = cls.model_class(x_data=[IMAGE], y_data=[MASK], degradation=5)
+        cls.model = cls.model_class(x_data=[IMAGE.filename], y_data=[MASK.filename], degradation=5)
 
 class TestSegmentedVgg16Wrapper(BaseWrapperTest):
 

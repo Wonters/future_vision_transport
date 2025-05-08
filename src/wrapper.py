@@ -43,15 +43,23 @@ class SegmentedModelWrapper:
             torch.cuda.set_device(self.local_rank)
         self.model = self.model_class(**self.model_params)
         self.model.to(self.device)
-        if dist.is_initialized():
-            self.dataloader, self.sampler = self.get_ddp_dataloader()
-            logger.info(f"Rank {dist.get_rank()} using DDP")
-        else:
-            self.dataset = self.dataset_class(x_data, y_data, degradation=degradation)
-            self.dataloader = DataLoader(self.dataset, batch_size=self.batch_size, shuffle=self.shuffle)
+        if x_data and y_data:
+            if dist.is_initialized():
+                self.dataloader, self.sampler = self.get_ddp_dataloader()
+                logger.info(f"Rank {dist.get_rank()} using DDP")
+            else:
+                self.dataset = self.dataset_class(x_data,
+                                                  y_data,
+                                                  degradation=degradation)
+                self.dataloader = DataLoader(self.dataset,
+                                             batch_size=self.batch_size,
+                                             shuffle=self.shuffle)
         self.criterion = torch.nn.CrossEntropyLoss()
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1.e-5)
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma=0.2)
+        self.optimizer = torch.optim.Adam(self.model.parameters(),
+                                          lr=1.e-5)
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,
+                                                         step_size=1,
+                                                         gamma=0.2)
 
     def sample_dataset(self, frac=0.1):
         """
@@ -89,6 +97,9 @@ class SegmentedModelWrapper:
 
     def train(self):
         """"""
+        if not hasattr(self,'dataset'):
+            raise Exception("No data had been configured, can't train. To Train the model, give data in input "
+                            f"as {self.__class__.__name__}(x_data=[...], y_data=[...])")
         self.model.train()
         with mlflow.start_run():
             for epoch in range(self.epochs):
@@ -109,7 +120,7 @@ class SegmentedModelWrapper:
                                          dtype=output_mask.dtype).unsqueeze(-1))
                     output_mask = output_mask.to(torch.uint8)
                     iou = iou_score(output_mask, masks.to(torch.uint8))
-                    mlflow.log_metric("iou", iou)
+                    mlflow.log_metric("iou", float(iou))
                     mlflow.log_metric("loss", loss.item())
                     mlflow.log_metric("time", time.time())
                     mlflow.log_metric("epoch", epoch)

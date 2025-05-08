@@ -11,8 +11,8 @@ def post_api(image):
     :param image:
     :return:
     """
-    payload = pickle.dumps([image])
-    rep = requests.post(API_ENDPOINT,data={"images":base64.b64encode(payload).decode('utf-8')})
+    payload = pickle.dumps(image)
+    rep = requests.post(API_ENDPOINT,json={"pickle_data":base64.b64encode(payload).decode('utf-8')})
     return pickle.loads(base64.b64decode(rep.text)), "Image segmentée"
 
 # GRADIO API
