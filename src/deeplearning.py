@@ -33,7 +33,7 @@ class ConvBlock(nn.Module):
 
 
 class DilatedNet(nn.Module):
-    def __init__(self, height, width, num_classes, use_ctx_module=False, bn=False):
+    def __init__(self, height, width, num_classes, use_ctx_module=False, bn=True):
         super().__init__()
         self.img_height = height
         self.img_width = width
@@ -85,16 +85,14 @@ class DilatedNet(nn.Module):
 
         # Bilinear upsampling
         x = F.interpolate(x, size=(self.img_height, self.img_width), mode='bilinear', align_corners=False)
-
-        # Reshape and softmax
-        x = x.permute(0, 2, 3, 1)#.reshape(x.size(0), -1, self.nclasses)
-        #x = F.softmax(x, dim=-1)
-
+        x = F.softmax(x, dim=1)
         return x
 
 
 class SegmentedVGG16(nn.Module):
-    """"""
+    """
+    Do segmentation in label mask shape (B,C,H,W) channel first
+    """
     def __init__(self, width, height, num_classes: int =8):
         super().__init__()
         self.input_width = width
@@ -113,7 +111,6 @@ class SegmentedVGG16(nn.Module):
         # from cats number to size of the image
         x = F.interpolate(x, size=(self.input_height, self.input_width), mode='bilinear', align_corners=False)
         # Transpose from class card to pixel card
-        #x = x.permute(0, 2, 3, 1)#.reshape(x.size(0), -1, self.num_classes)
         x = F.softmax(x, dim=1)
         return x
 

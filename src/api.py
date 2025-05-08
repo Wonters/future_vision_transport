@@ -4,7 +4,7 @@ import pickle
 from PIL.PngImagePlugin import PngImageFile
 from pydantic import BaseModel
 from fastapi import FastAPI, Request
-from src.wrapper import SegmentedVgg16Wrapper
+from src.config import wrapper
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,6 @@ async def predict(request: Request, image: ImageModel):
     :return:
     """
     logger.info("Launch prediction")
-    wrapper = SegmentedVgg16Wrapper()
     pil_image = image.decode()
     output = wrapper.predict([pil_image])
     return base64.b64encode(pickle.dumps(wrapper.visualize(pil_image, output.cpu().detach().numpy()[0,...])))

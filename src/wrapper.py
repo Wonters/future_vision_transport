@@ -1,4 +1,5 @@
 import logging
+import os
 import random
 import time
 import numpy as np
@@ -26,6 +27,8 @@ class SegmentedModelWrapper:
     device: str = "mps"
     batch_size: int = 10
     shuffle: bool = True
+    # For development
+    mlflow_register : str = "./mlruns_dev"
 
     @property
     def model_params(self)->dict:
@@ -35,6 +38,8 @@ class SegmentedModelWrapper:
 
     def __init__(self,x_data:list=None, y_data:list=None, degradation: int = 10, distributed: bool=False):
         """"""
+        if os.environ.get("DEV", False):
+            mlflow.set_tracking_uri(self.mlflow_register)
         self.distributed = distributed
         if self.distributed:
             dist.init_process_group("nccl")
@@ -95,6 +100,10 @@ class SegmentedModelWrapper:
         dataloader = DataLoader(sampled_dataset, batch_size=self.batch_size, sampler=sampler)
         return dataloader, sampler
 
+    @property
+    def checkpoint_path(self):
+        return f"{self.model.__class__.__name__}.pth"
+
     def train(self):
         """"""
         if not hasattr(self,'dataset'):
@@ -107,6 +116,7 @@ class SegmentedModelWrapper:
                     self.optimizer.zero_grad()
                     # Output shape (B, H, W, C)
                     output = self.model(images)
+                    logger.debug(f"Train shapes: pred {output.shape}, true {masks.shape}")
                     loss = self.criterion(output, masks)
                     output = output.cpu().detach()
                     masks = masks.cpu().detach()
@@ -129,7 +139,7 @@ class SegmentedModelWrapper:
                     loss.backward()
                     self.optimizer.step()
                 self.scheduler.step(epoch)
-            torch.save(self.model.state_dict(), 'model.pth')
+            torch.save(self.model.state_dict(), self.checkpoint_path)
 
     def visualize(self,image:PngImageFile, mask: np.ndarray):
         """
@@ -159,7 +169,7 @@ class SegmentedModelWrapper:
 
     def predict(self, images: List[str|PngImageFile]):
         """"""
-        state_dict = torch.load('model.pth')
+        state_dict = torch.load(self.checkpoint_path)
         self.model.load_state_dict(state_dict)
         self.model.eval()
         logger.info(f"Predict {images}")
@@ -191,6 +201,7 @@ class SegmentedDilatednetWrapper(SegmentedModelWrapper):
     dataset_class = DatasetVGG16
 
 class SegmentedUnetWrapper(SegmentedModelWrapper):
+    batch_size = 1
     model_class = UNet
     dataset_class = DatasetVGG16
 

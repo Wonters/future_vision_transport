@@ -14,4 +14,13 @@ of the complexity of masks, the precision required, and the cost of computing.
 This application handle the long task of a manual segmentation if new images.
 
 ## Installation
-- pip install 
+- pip install
+
+## Train on GPU
+DEBUG
+```bash
+export TORCH_DISTRIBUTED_DEBUG=DETAIL
+```
+```bash
+python -m torch.distributed.run --nproc_per_node=2 train.py
+```

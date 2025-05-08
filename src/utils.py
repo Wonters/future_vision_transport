@@ -79,3 +79,14 @@ def iou_score(pred, target, eps=1e-6):
     intersection = (pred & target).float().sum()
     union = (pred | target).float().sum()
     return (intersection + eps) / (union + eps)
+
+
+def load_module(module_name:str = "src.deeplearning", class_name:str= "Unet"):
+    """
+    Dynamic load model
+    :param module_name:
+    :param class_name:
+    :return:
+    """
+    module = __import__(module_name, fromlist=[''])
+    return getattr(module, class_name)

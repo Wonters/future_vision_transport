@@ -1,9 +1,9 @@
+import os
 import requests
 import gradio as gr
 import base64
 import pickle
-
-API_ENDPOINT = "http://127.0.0.1:8001/predict"
+from src.config import API_ENDPOINT
 
 def post_api(image):
     """
