@@ -36,7 +36,10 @@ class SegmentedModelWrapper:
                     height=1024,
                     num_classes=8)
 
-    def __init__(self,x_data:list=None, y_data:list=None, degradation: int = 10, distributed: bool=False):
+    def __init__(self,x_data:list=None, y_data:list=None,
+                 degradation: int = 10,
+                 frac=0.1,
+                 distributed: bool=False):
         """"""
         if os.environ.get("DEV", False):
             mlflow.set_tracking_uri(self.mlflow_register)
@@ -50,7 +53,7 @@ class SegmentedModelWrapper:
         self.model.to(self.device)
         if x_data and y_data:
             if dist.is_initialized():
-                self.dataloader, self.sampler = self.get_ddp_dataloader()
+                self.dataloader, self.sampler = self.get_ddp_dataloader(frac=frac)
                 logger.info(f"Rank {dist.get_rank()} using DDP")
             else:
                 self.dataset = self.dataset_class(x_data,
@@ -91,7 +94,7 @@ class SegmentedModelWrapper:
                                                             find_unused_parameters=True)
     def get_ddp_dataloader(self, frac=1.0):
         """
-        Create a distribute dataloader with a fraction of the original dataset
+        Create distribute dataloader with a fraction of the original dataset
         :param frac:
         :return:
         """
