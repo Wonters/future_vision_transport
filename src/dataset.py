@@ -28,7 +28,7 @@ class DatasetVGG16(Dataset):
             std=[0.5]
         )
     ])
-    device: str = "mps"
+    device: str = "cuda"
     def __init__(self, images, masked_images, degradation: int = 5):
         self.images = images
         self.masked_images = masked_images
@@ -53,7 +53,6 @@ class DatasetVGG16(Dataset):
         y_mask = y_mask.unsqueeze(0)
         mask = group_masked(y_mask)
         mask = mask.permute(2,0,1)
-        #mask = mask.reshape(y_mask.shape[1] * y_mask.shape[2], 8)
         mask = mask.to(self.device)
         x_vgg16 = x_vgg16.to(self.device)
         return x_vgg16, mask

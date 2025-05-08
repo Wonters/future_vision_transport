@@ -24,7 +24,7 @@ class SegmentedModelWrapper:
     model_class = SegmentedVGG16
     dataset_class = DatasetVGG16
     epochs: int = 5
-    device: str = "mps"
+    device: str = "cuda"
     batch_size: int = 10
     shuffle: bool = True
     # For development
@@ -51,14 +51,14 @@ class SegmentedModelWrapper:
             torch.cuda.set_device(self.local_rank)
         self.model = self.model_class(**self.model_params)
         self.model.to(self.device)
+        self.dataset = self.dataset_class(x_data,
+                                          y_data,
+                                          degradation=degradation)
         if x_data and y_data:
             if dist.is_initialized():
                 self.dataloader, self.sampler = self.get_ddp_dataloader(frac=frac)
                 logger.info(f"Rank {dist.get_rank()} using DDP")
             else:
-                self.dataset = self.dataset_class(x_data,
-                                                  y_data,
-                                                  degradation=degradation)
                 self.dataloader = DataLoader(self.dataset,
                                              batch_size=self.batch_size,
                                              shuffle=self.shuffle)
