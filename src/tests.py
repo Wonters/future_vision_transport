@@ -2,11 +2,9 @@ import numpy as np
 import torch
 import pickle
 import base64
-
-from PIL.PngImagePlugin import PngImageFile
+from pathlib import Path
 from fastapi.testclient import TestClient
 from PIL import Image
-from glob import glob
 from src.wrapper import SegmentedVgg16Wrapper, SegmentedDilatednetWrapper, SegmentedUnetWrapper
 from src.utils import degrade_png_quality, group_masked, iou_score, CATEGORIES_MASK
 from src.api import app
@@ -75,6 +73,10 @@ class TestSegmentedVgg16Wrapper(BaseWrapperTest):
     def test_train(self):
         """"""
         self.model.train()
+        assert Path(self.model.checkpoint_path).is_file()
+
+    def test_features(self):
+        print(self.model.model.encoder)
 
     def test_predict(self):
         """"""

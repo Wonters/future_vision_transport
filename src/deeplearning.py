@@ -93,25 +93,98 @@ class SegmentedVGG16(nn.Module):
     """
     Do segmentation in label mask shape (B,C,H,W) channel first
     """
+    skip_connexion: bool = True
+    upsampling: bool = True
     def __init__(self, width, height, num_classes: int =8):
         super().__init__()
         self.input_width = width
         self.input_height = height
         self.num_classes = num_classes
-        self.model = models.vgg16(pretrained=True)
-        self.features = self.model.features
-        # 512 to 8 classes
-        self.classifier = nn.Conv2d(512, self.num_classes, kernel_size=1)
+        # Use batch normalization for vgg16
+        self.vgg16 = models.vgg16_bn(pretrained=True)
+        if self.skip_connexion:
+            # Décomposer l'encoder
+            self.enc1 = self.vgg16.features[0:6]  # conv1 (64)
+            self.enc2 = self.vgg16.features[6:13]  # conv2 (128)
+            self.enc3 = self.vgg16.features[13:23]  # conv3 (256)
+            self.enc4 = self.vgg16.features[23:33]  # conv4 (512)
+            self.enc5 = self.vgg16.features[33:43]  # conv5 (512)
+
+            # Decoder
+            # 512 + 512 allow getting global and detail information, what is it and where is it
+            self.up4 = self._upsample_block(512 + 512, 256)
+            self.up3 = self._upsample_block(256 + 256, 128)
+            self.up2 = self._upsample_block(128 + 128, 64)
+            self.up1 = self._upsample_block(64 + 64, 64)
+            # Linear reduction to num_class without creation information
+            self.final_conv = nn.Conv2d(64, num_classes, kernel_size=1)
+        elif self.upsampling:
+            # Decoder allow a progressive upsampling
+            self.decoder = self.simple_upsampling()
+        else:
+            # Heavy compression (Conv → ReLU → Conv → ReLU → MaxPool)*5
+            self.encoder = self.vgg16.features
+            # 512 to 8 classes, no upsampling
+            self.classifier = nn.Conv2d(512, self.num_classes, kernel_size=1)
+    @staticmethod
+    def _upsample_block(in_channels, out_channels):
+        """
+        Sequence of Conv -> Upsampling -> ReLU
+        :return:
+        """
+        return nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            # Batch normalisation to stabilize
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
+        )
+
+    def simple_upsampling(self):
+        nn.Sequential(
+            self._upsample_block(512, 256),
+            self._upsample_block(256, 128),
+            nn.Conv2d(128, self.num_classes, 1)
+        )
+
+    def skip_connexion_encoder(self, x):
+        """
+        Upsampling retrieving each step of the cnn
+        :param x:
+        :return:
+        """
+        x1 = self.enc1(x)  # H/2
+        x2 = self.enc2(x1)  # H/4
+        x3 = self.enc3(x2)  # H/8
+        x4 = self.enc4(x3)  # H/16
+        x5 = self.enc5(x4)  # H/32
+        return x1, x2, x3, x4, x5
+
+    def interpolation(self, x, size):
+        return F.interpolate(x, size=size, mode='bilinear', align_corners=False)
+
+    def skip_connexion_decoder(self, x1, x2, x3, x4, x5):
+        # x5 + x4 allow getting global and detail information, what is it and where is it
+        d4 = self.up4(torch.cat([self.interpolation(x5, x4.shape[2:]), x4], dim=1))  # H/16
+        d3 = self.up3(torch.cat([self.interpolation(d4, x3.shape[2:]), x3], dim=1))  # H/8
+        d2 = self.up2(torch.cat([self.interpolation(d3, x2.shape[2:]), x2], dim=1))  # H/4
+        d1 = self.up1(torch.cat([self.interpolation(d2, x1.shape[2:]), x1], dim=1))  # H/2
+        return d1
 
 
     def forward(self, x):
         """"""
-        x = self.features(x)
-        x = self.classifier(x)
+        if self.skip_connexion:
+            x = self.skip_connexion_decoder(*self.skip_connexion_encoder(x))
+            x = self.final_conv(x)
+        else:
+            # Heavy compression, Loss details, output (1, 512, 7, 7)
+            x = self.encoder(x)
+            if self.upsampling:
+                x = self.decoder(x) if self.upsampling else self.classifier(x)
+
         # from cats number to size of the image, Upsampling brutal
-        x = F.interpolate(x, size=(self.input_height, self.input_width), mode='bilinear', align_corners=False)
-        # Transpose from class card to pixel card
-        #x = F.softmax(x, dim=1)
+        x = self.interpolation(x, size=(self.input_height, self.input_width))
         return x
 
 
