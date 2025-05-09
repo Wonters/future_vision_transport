@@ -85,7 +85,7 @@ class DilatedNet(nn.Module):
 
         # Bilinear upsampling
         x = F.interpolate(x, size=(self.img_height, self.img_width), mode='bilinear', align_corners=False)
-        x = F.softmax(x, dim=1)
+        #x = F.softmax(x, dim=1)
         return x
 
 
@@ -108,10 +108,10 @@ class SegmentedVGG16(nn.Module):
         """"""
         x = self.features(x)
         x = self.classifier(x)
-        # from cats number to size of the image
+        # from cats number to size of the image, Upsampling brutal
         x = F.interpolate(x, size=(self.input_height, self.input_width), mode='bilinear', align_corners=False)
         # Transpose from class card to pixel card
-        x = F.softmax(x, dim=1)
+        #x = F.softmax(x, dim=1)
         return x
 
 
@@ -178,4 +178,4 @@ class UNet(nn.Module):
 
         out = self.final(d1)
         out = F.interpolate(out, size=(1024, 2048), mode='bilinear', align_corners=False)
-        return F.softmax(out, dim=1)
+        return out

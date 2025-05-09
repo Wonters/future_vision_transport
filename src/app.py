@@ -1,4 +1,3 @@
-import os
 import requests
 import gradio as gr
 import base64
@@ -20,7 +19,7 @@ interface = gr.Interface(
     fn=post_api,
     inputs=gr.Image(type="pil"),
     outputs=[gr.Image(type="pil", label="Image annotée"), gr.Textbox(label="Résultat JSON")],
-    title="Prédicteur de ",
+    title="Segmenteur",
     description="Uploadez une image puis cliquez sur Predict."
 )
 

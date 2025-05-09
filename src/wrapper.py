@@ -1,9 +1,11 @@
 import logging
 import os
+from tqdm import tqdm
 import random
 import time
 import numpy as np
 import torch
+from torch.nn import functional as F
 import torch.distributed as dist
 import torch.nn as nn
 import mlflow
@@ -14,6 +16,7 @@ from torch.utils.data import DistributedSampler, DataLoader, Subset
 from .dataset import DatasetVGG16
 from .deeplearning import DilatedNet, SegmentedVGG16, UNet
 from .utils import iou_score, CATEGORIES_MASK, LAYER_COLORS
+from .config import DEVICE
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +27,10 @@ class SegmentedModelWrapper:
     model_class = SegmentedVGG16
     dataset_class = DatasetVGG16
     epochs: int = 5
-    device: str = "cuda"
+    device: str = DEVICE
     batch_size: int = 10
     shuffle: bool = True
+    lr = 1.e-5
     # For development
     mlflow_register : str = "./mlruns_dev"
 
@@ -64,7 +68,7 @@ class SegmentedModelWrapper:
                                              shuffle=self.shuffle)
         self.criterion = torch.nn.CrossEntropyLoss()
         self.optimizer = torch.optim.Adam(self.model.parameters(),
-                                          lr=1.e-5)
+                                          lr=self.lr)
         self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,
                                                          step_size=1,
                                                          gamma=0.2)
@@ -114,13 +118,15 @@ class SegmentedModelWrapper:
                             f"as {self.__class__.__name__}(x_data=[...], y_data=[...])")
         self.model.train()
         with mlflow.start_run():
+            mlflow.log_param('lr', self.lr)
             for epoch in range(self.epochs):
-                for images, masks in self.dataloader:
+                for images, masks in tqdm(self.dataloader):
                     self.optimizer.zero_grad()
                     # Output shape (B, H, W, C)
                     output = self.model(images)
                     logger.debug(f"Train shapes: pred {output.shape}, true {masks.shape}")
                     loss = self.criterion(output, masks)
+                    output = F.softmax(output, dim=1)
                     output = output.cpu().detach()
                     masks = masks.cpu().detach()
                     output = output.permute(0,2,3,1)
@@ -172,8 +178,8 @@ class SegmentedModelWrapper:
 
     def predict(self, images: List[str|PngImageFile]):
         """"""
-        state_dict = torch.load(self.checkpoint_path)
-        self.model.load_state_dict(state_dict)
+        state_dict = torch.load(self.checkpoint_path,  map_location="mps")
+        self.model.load_state_dict(state_dict, strict=False)
         self.model.eval()
         logger.info(f"Predict {images}")
         for i in range(0, len(images), self.batch_size):

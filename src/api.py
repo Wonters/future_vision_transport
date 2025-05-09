@@ -4,11 +4,12 @@ import pickle
 from PIL.PngImagePlugin import PngImageFile
 from pydantic import BaseModel
 from fastapi import FastAPI, Request
-from src.config import wrapper
+from src.utils import load_module
+from src.config import WRAPPER_CONFIG, WRAPPER_CLASS
+
+wrapper = load_module('src.wrapper',WRAPPER_CLASS)(**WRAPPER_CONFIG)
 
 logger = logging.getLogger(__name__)
-
-
 app = FastAPI()
 @app.get("/")
 def readme():

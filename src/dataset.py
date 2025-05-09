@@ -3,9 +3,8 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
-
 from src.utils import degrade_png_quality, group_masked
-
+from src.config import DEVICE
 
 class DatasetVGG16(Dataset):
     """
@@ -28,7 +27,7 @@ class DatasetVGG16(Dataset):
             std=[0.5]
         )
     ])
-    device: str = "cuda"
+    device: str = DEVICE
     def __init__(self, images, masked_images, degradation: int = 5):
         self.images = images
         self.masked_images = masked_images
