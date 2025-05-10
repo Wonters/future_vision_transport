@@ -3,7 +3,7 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
-from src.utils import degrade_png_quality, group_masked
+from src.utils import degrade_png_quality, group_mask
 from src.config import DEVICE
 
 class DatasetVGG16(Dataset):
@@ -50,7 +50,8 @@ class DatasetVGG16(Dataset):
         x_vgg16 = self.transform_rgb(image)
         y_mask = torch.from_numpy(np.array(image_mask))
         y_mask = y_mask.unsqueeze(0)
-        mask = group_masked(y_mask)
+        mask = group_mask(y_mask)
+        mask = mask[0,...]
         mask = mask.permute(2,0,1)
         mask = mask.to(self.device)
         x_vgg16 = x_vgg16.to(self.device)

@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from PIL import Image
 from src.wrapper import SegmentedVgg16Wrapper, SegmentedDilatednetWrapper, SegmentedUnetWrapper
-from src.utils import degrade_png_quality, group_masked, iou_score, CATEGORIES_MASK
+from src.utils import degrade_png_quality, group_mask,group_mask_v2, iou_score, CATEGORIES_MASK
 from src.api import app
 
 IMAGE = Image.open('zurich/annotat/zurich_000000_000019_leftImg8bit.png')
@@ -28,9 +28,9 @@ def test_group_mask():
     """
     mask = torch.from_numpy(np.array(MASK))
     mask = mask.unsqueeze(0)
-    mask_ = group_masked(mask)
+    mask_ = group_mask(mask)
     for cat_num, cat_value in enumerate(CATEGORIES_MASK.values()):
-        assert np.array_equal(mask_ == cat_num, np.isin(np.array(MASK), cat_value))
+        assert np.array_equal(mask_.numpy()[0,...,cat_num], np.isin(np.array(MASK), cat_value))
 
 def test_group_mask_2():
     """
@@ -39,10 +39,21 @@ def test_group_mask_2():
     """
     mask = torch.from_numpy(np.array(MASK))
     mask = mask.unsqueeze(0)
-    mask_ = group_masked(mask, with_cat_number=True)
+    mask_ = group_mask_v2(mask, with_cat_number=True)
     model = SegmentedVgg16Wrapper()
-    #model.visualize(image=IMAGE, mask=mask_).show()
-    assert model.visualize(image=IMAGE, mask=mask_).size == (2048, 1024)
+    model.visualize(image=IMAGE, mask=mask_[0,...].numpy()).show()
+    assert model.visualize(image=IMAGE, mask=mask_[0,...]).size == (2048, 1024)
+
+def test_group_mask_3():
+    """
+    Test the mask if it contains human informations
+    :return:
+    """
+    mask = torch.from_numpy(np.array(MASK))
+    mask = mask.unsqueeze(0)
+    mask_ = group_mask_v2(mask)
+    for cat_num, cat_value in enumerate(CATEGORIES_MASK.values()):
+        assert np.array_equal(mask_.numpy()[0,...,cat_num], np.isin(np.array(MASK), cat_value))
 
 def test_iou_score():
     mask1 = torch.from_numpy(np.array(MASK))

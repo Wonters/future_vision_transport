@@ -26,14 +26,14 @@ CATEGORIES_MASK = {'void': [0, 1, 2, 3, 4, 5, 6],
  'vehicle': [26, 27, 28, 29, 30, 31, 32, 33, -1]}
 
 LAYER_COLORS = {
-'void': (255,100,255),
- 'flat': (255,255,255),
- 'construction': (0,255,255),
- 'object': (255,0,255),
- 'nature': (0,255,0),
- 'sky': (0,0,255),
- 'human': (255,0,0),
- 'vehicle': (255,0,255)
+'void': (0,0,0), # black
+ 'flat': (255,255,255), # white
+ 'construction': (0,255,255), # cyan
+ 'object': (255,255,0), # yellow
+ 'nature': (0,255,0), # green
+ 'sky': (0,0,255), # blue
+ 'human': (255,0,0), # red
+ 'vehicle': (255,0,255) # pink
 }
 
 def degrade_png_quality(png_image: Image.Image, quality=10, mode="RGB") -> Image.Image:
@@ -49,22 +49,53 @@ def degrade_png_quality(png_image: Image.Image, quality=10, mode="RGB") -> Image
     img_degraded = Image.fromarray(degraded_image, mode=mode).resize(png_image.size, Image.BILINEAR)
     return img_degraded
 
-def group_masked(y_mask, with_cat_number:bool=False):
+def group_mask(y_mask, with_cat_number:bool=False):
     """
     Return a grouped categories mask
-    :param y_mask:
+    :param y_mask: (B,H,W)
     :param with_cat_number: fill the mask with the value of the category instead of 1
     :return:
     """
-    mask = torch.zeros((*y_mask.shape[1::], 8))
+    mask = torch.zeros((*y_mask.shape, 8))
     for i in range(-1, 34):
         for j, (cat_name, cat_values) in enumerate(CATEGORIES_MASK.items()):
             if i in cat_values:
-                sub = torch.logical_or(mask[:, :, j], (y_mask == i))
+                sub = torch.logical_or(mask[..., j], (y_mask == i))
                 if with_cat_number:
                     sub = sub.to(torch.int8)
-                    sub[sub==1] = j
-                mask[:, :, j] = sub
+                    sub[sub==1] = j+1 # avoid 0
+                mask[..., j] = sub
+    return mask
+
+
+def group_mask_v2(y_mask, with_cat_number:bool=False):
+    """
+    Faster, group categories from a mask
+    :param y_mask:
+    :param with_cat_number:
+    :return:
+    """
+    # Lookup table
+    lut = torch.full((256,), -1, dtype=torch.int32, device=y_mask.device)  # suppose que les labels vont de 0 à 255
+
+    for j, (_, values) in enumerate(CATEGORIES_MASK.items()):
+        lut[torch.tensor(values)] = j
+
+    # 2. Appliquer le LUT sur y_mask
+    flat_y_mask = y_mask.view(-1)  # 1D
+    # Long to insure flat_y_mask can be consider as index
+    mapped_flat = lut[flat_y_mask.long()]  # 1D
+    mapped = mapped_flat.view(y_mask.shape)
+
+    num_classes = len(CATEGORIES_MASK)
+    mask = torch.zeros((*y_mask.shape, num_classes), dtype=torch.bool, device=y_mask.device)
+
+    for j in range(num_classes):
+        mask[..., j] = (mapped == j)
+
+    if with_cat_number:
+        indexes = torch.arange(1, mask.shape[-1]+1).view(1, 1, 1,mask.shape[-1])
+        mask = mask*indexes
     return mask
 
 def iou_score(pred, target, eps=1e-6):

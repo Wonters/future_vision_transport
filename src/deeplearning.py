@@ -103,6 +103,12 @@ class SegmentedVGG16(nn.Module):
         # Use batch normalization for vgg16
         self.vgg16 = models.vgg16_bn(pretrained=True)
         if self.skip_connexion:
+            # Allow to compute an auxiliary loss to force to nn to predict better prediction sooner
+            # Get direct logits, no relu and batchnorm, linear transformation
+            self.aux_head = nn.Sequential(
+                nn.Conv2d(64, num_classes, kernel_size=1),
+                nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)  # pour revenir à (H, W)
+            )
             # Décomposer l'encoder
             self.enc1 = self.vgg16.features[0:6]  # conv1 (64)
             self.enc2 = self.vgg16.features[6:13]  # conv2 (128)
@@ -116,6 +122,10 @@ class SegmentedVGG16(nn.Module):
             self.up3 = self._upsample_block(256 + 256, 128)
             self.up2 = self._upsample_block(128 + 128, 64)
             self.up1 = self._upsample_block(64 + 64, 64)
+            self.drop_up4 = nn.Dropout(0.05)
+            self.drop_up3 = nn.Dropout(0.05)
+            self.drop_up2 = nn.Dropout(0.05)
+            self.drop_up1 = nn.Dropout(0.05)
             # Linear reduction to num_class without creation information
             self.final_conv = nn.Conv2d(64, num_classes, kernel_size=1)
         elif self.upsampling:
@@ -166,17 +176,24 @@ class SegmentedVGG16(nn.Module):
     def skip_connexion_decoder(self, x1, x2, x3, x4, x5):
         # x5 + x4 allow getting global and detail information, what is it and where is it
         d4 = self.up4(torch.cat([self.interpolation(x5, x4.shape[2:]), x4], dim=1))  # H/16
+        #d4 = self.drop_up4(d4)
         d3 = self.up3(torch.cat([self.interpolation(d4, x3.shape[2:]), x3], dim=1))  # H/8
+        #d3 = self.drop_up3(d3)
         d2 = self.up2(torch.cat([self.interpolation(d3, x2.shape[2:]), x2], dim=1))  # H/4
+        #d2 = self.drop_up2(d2)
         d1 = self.up1(torch.cat([self.interpolation(d2, x1.shape[2:]), x1], dim=1))  # H/2
-        return d1
+        #d1 = self.drop_up1(d1)
+        aux_out = self.aux_head(d2)
+        return d1, aux_out
 
 
     def forward(self, x):
         """"""
+        aux_out = None
         if self.skip_connexion:
-            x = self.skip_connexion_decoder(*self.skip_connexion_encoder(x))
+            x, aux_out = self.skip_connexion_decoder(*self.skip_connexion_encoder(x))
             x = self.final_conv(x)
+            aux_out = self.interpolation(x, size=(self.input_height, self.input_width))
         else:
             # Heavy compression, Loss details, output (1, 512, 7, 7)
             x = self.encoder(x)
@@ -185,7 +202,7 @@ class SegmentedVGG16(nn.Module):
 
         # from cats number to size of the image, Upsampling brutal
         x = self.interpolation(x, size=(self.input_height, self.input_width))
-        return x
+        return x, aux_out
 
 
 class UNet(nn.Module):

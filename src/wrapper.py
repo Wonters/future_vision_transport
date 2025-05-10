@@ -3,6 +3,7 @@ import os
 from tqdm import tqdm
 import random
 import time
+from pathlib import Path
 import numpy as np
 import torch
 from torch.nn import functional as F
@@ -31,6 +32,10 @@ class SegmentedModelWrapper:
     batch_size: int = 10
     shuffle: bool = True
     lr = 1.e-5
+    weights = torch.tensor([0.0659, 0.0129, 0.0237, 0.2786,
+                                0.0323, 0.1364, 0.3848, 0.0655],
+                           dtype=torch.float32,
+                           device=DEVICE)
     # For development
     mlflow_register : str = "./mlruns_dev"
 
@@ -54,6 +59,7 @@ class SegmentedModelWrapper:
             self.local_rank = dist.get_rank()
             torch.cuda.set_device(self.local_rank)
         self.model = self.model_class(**self.model_params)
+        self.load_checkpoint()
         self.model.to(self.device)
         self.dataset = self.dataset_class(x_data,
                                           y_data,
@@ -66,12 +72,20 @@ class SegmentedModelWrapper:
                 self.dataloader = DataLoader(self.dataset,
                                              batch_size=self.batch_size,
                                              shuffle=self.shuffle)
-        self.criterion = torch.nn.CrossEntropyLoss()
-        self.optimizer = torch.optim.Adam(self.model.parameters(),
-                                          lr=self.lr)
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,
-                                                         step_size=1,
-                                                         gamma=0.2)
+        self.criterion = torch.nn.CrossEntropyLoss(weight=self.weights,
+                                                   #ignore_index=0
+                                                   )
+        self.optimizer = torch.optim.AdamW(self.model.parameters(),
+                                          lr=self.lr,
+                                          weight_decay=1e-2)
+        # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,
+        #                                                  step_size=1,
+        #                                                  gamma=0.2)
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer,
+                                                                    mode='min',
+                                                                    factor=0.5,
+                                                                    patience=3,
+                                                                    verbose=True)
 
     def sample_dataset(self, frac=0.1):
         """
@@ -117,16 +131,27 @@ class SegmentedModelWrapper:
             raise Exception("No data had been configured, can't train. To Train the model, give data in input "
                             f"as {self.__class__.__name__}(x_data=[...], y_data=[...])")
         self.model.train()
+        logger.info(f"Start training on {len(self.dataset)} images")
         with mlflow.start_run():
             mlflow.log_param('lr', self.lr)
             for epoch in range(self.epochs):
+                val_loss = np.array([])
                 for images, masks in tqdm(self.dataloader):
                     self.optimizer.zero_grad()
                     # Output shape (B, H, W, C)
-                    output = self.model(images)
-                    logger.debug(f"Train shapes: pred {output.shape}, true {masks.shape}")
-                    loss = self.criterion(output, masks)
-                    output = F.softmax(output, dim=1)
+                    if False and hasattr(self.model, "aux_head"):
+                        logits, aux_logits = self.model(images)
+                        loss = self.criterion(logits, masks)
+                        aux_loss = self.criterion(aux_logits, masks)
+                        np.concatenate((val_loss, [loss.item()+0.1*aux_loss.item()]))
+                    else:
+                        try:
+                            logits, _ = self.model(images)
+                        except ValueError:
+                            logits = self.model(images)
+                        loss = self.criterion(logits, masks)
+                        np.concatenate((val_loss, [loss.item()]))
+                    output = F.softmax(logits, dim=1)
                     output = output.cpu().detach()
                     masks = masks.cpu().detach()
                     output = output.permute(0,2,3,1)
@@ -143,12 +168,14 @@ class SegmentedModelWrapper:
                     mlflow.log_metric("loss", loss.item())
                     mlflow.log_metric("time", time.time())
                     mlflow.log_metric("epoch", epoch)
+                    mlflow.log_metric('current_lr', self.optimizer.param_groups[0]['lr'])
                     logger.info(f"Epoch {epoch} : Loss {loss.item()}")
                     logger.info(f"IOU {iou}")
                     loss.backward()
                     self.optimizer.step()
-                self.scheduler.step(epoch)
+                self.scheduler.step(val_loss.mean())
             torch.save(self.model.state_dict(), self.checkpoint_path)
+            mlflow.log_artifact(self.checkpoint_path)
 
     def visualize(self,image:PngImageFile, mask: np.ndarray):
         """
@@ -175,11 +202,17 @@ class SegmentedModelWrapper:
         blended = Image.blend(image,img, alpha=0.4)
         return blended
 
+    def load_checkpoint(self):
+        if Path(self.checkpoint_path).exists():
+            state_dict = torch.load(self.checkpoint_path, map_location="mps")
+            self.model.load_state_dict(state_dict, strict=False)
+            logger.info("Checkpoint loaded")
+        else:
+            logger.warning(f"No checkpoint found at {self.checkpoint_path}")
 
     def predict(self, images: List[str|PngImageFile]):
         """"""
-        state_dict = torch.load(self.checkpoint_path,  map_location="mps")
-        self.model.load_state_dict(state_dict, strict=False)
+
         self.model.eval()
         logger.info(f"Predict {images}")
         for i in range(0, len(images), self.batch_size):
@@ -190,7 +223,7 @@ class SegmentedModelWrapper:
             x_vgg16 = x_vgg16.to(self.device)
             with torch.no_grad():
                 start= time.time()
-                output = self.model(x_vgg16)
+                output, _ = self.model(x_vgg16)
                 logger.info(f"Predicition done in {time.time()-start}")
         return output.permute(0,2,3,1)
 
@@ -210,7 +243,7 @@ class SegmentedDilatednetWrapper(SegmentedModelWrapper):
     dataset_class = DatasetVGG16
 
 class SegmentedUnetWrapper(SegmentedModelWrapper):
-    batch_size = 1
+    batch_size = 10
     model_class = UNet
     dataset_class = DatasetVGG16
 
