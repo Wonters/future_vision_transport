@@ -14,8 +14,8 @@ from typing import List
 from PIL import Image
 from PIL.PngImagePlugin import PngImageFile
 from torch.utils.data import DistributedSampler, DataLoader, Subset
-from .dataset import DatasetVGG16
-from .deeplearning import DilatedNet, SegmentedVGG16, UNet
+from .dataset import DatasetVGG16,DatasetDeepLabV3
+from .deeplearning import DilatedNet, SegmentedVGG16, UNet, DeepLabV3
 from .utils import iou_score, CATEGORIES_MASK, LAYER_COLORS
 from .config import DEVICE
 
@@ -125,6 +125,13 @@ class SegmentedModelWrapper:
     def checkpoint_path(self):
         return f"{self.model.__class__.__name__}.pth"
 
+    def _prediction(self, images):
+        """
+        Return results of a prediction
+        :return:
+        """
+        return self.model(images)
+
     def train(self):
         """"""
         if not hasattr(self,'dataset'):
@@ -140,15 +147,15 @@ class SegmentedModelWrapper:
                     self.optimizer.zero_grad()
                     # Output shape (B, H, W, C)
                     if False and hasattr(self.model, "aux_head"):
-                        logits, aux_logits = self.model(images)
+                        logits, aux_logits = self._prediction(images)
                         loss = self.criterion(logits, masks)
                         aux_loss = self.criterion(aux_logits, masks)
                         np.concatenate((val_loss, [loss.item()+0.1*aux_loss.item()]))
                     else:
                         try:
-                            logits, _ = self.model(images)
+                            logits, _ = self._prediction(images)
                         except ValueError:
-                            logits = self.model(images)
+                            logits = self._prediction(images)
                         loss = self.criterion(logits, masks)
                         np.concatenate((val_loss, [loss.item()]))
                     output = F.softmax(logits, dim=1)
@@ -223,7 +230,10 @@ class SegmentedModelWrapper:
             x_vgg16 = x_vgg16.to(self.device)
             with torch.no_grad():
                 start= time.time()
-                output, _ = self.model(x_vgg16)
+                try:
+                    output, _ = self._prediction(x_vgg16)
+                except ValueError:
+                    output = self._prediction(x_vgg16)
                 logger.info(f"Predicition done in {time.time()-start}")
         return output.permute(0,2,3,1)
 
@@ -252,3 +262,22 @@ class SegmentedUnetWrapper(SegmentedModelWrapper):
         return dict(
 
         )
+
+    def _prediction(self, images):
+        print(images.shape)
+        return super()._prediction(images)
+
+class SegmentedDeeplabV3(SegmentedModelWrapper):
+    model_class = DeepLabV3
+    dataset_class = DatasetDeepLabV3
+
+    @property
+    def model_params(self) ->dict:
+        return dict(
+
+        )
+
+    def _prediction(self, images):
+        logits = self.model(images)['out']
+        logits = F.interpolate(logits, (1024, 2048), mode='bilinear', align_corners=False)
+        return logits

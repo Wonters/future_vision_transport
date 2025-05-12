@@ -16,7 +16,7 @@ logging.basicConfig(
 images = glob.glob("data/segmented/leftImg8bit/train/*/*.png")
 masks = glob.glob("data/annotate/gtFine/train/*/*_labelIds.png")
 logging.info(f"Images {len(images)} / Masks {len(masks)}")
-API_ENDPOINT = os.environ.get('API_ENDPOINT', "http://127.0.0.1:8001/predict")
+API_ENDPOINT = os.environ.get('API_ENDPOINT', "http://127.0.0.1:8000/predict")
 DEVICE = os.environ.get("DEVICE", "mps")
 
 WRAPPER_CLASS = os.environ.get('WRAPPER_NAME',

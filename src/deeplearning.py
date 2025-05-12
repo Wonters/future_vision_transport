@@ -88,6 +88,15 @@ class DilatedNet(nn.Module):
         #x = F.softmax(x, dim=1)
         return x
 
+class DeepLabV3:
+
+    def __new__(cls, *args, **kwargs):
+        model = models.segmentation.deeplabv3_resnet50(pretrained=True)
+        model.classifier = nn.Conv2d(2048, 8, kernel_size=1)
+        model.aux_classifier = None
+        return model
+
+
 
 class SegmentedVGG16(nn.Module):
     """
@@ -143,15 +152,16 @@ class SegmentedVGG16(nn.Module):
         :return:
         """
         return nn.Sequential(
+            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2),
             nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
             # Batch normalisation to stabilize
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True),
-            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
+            #nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
         )
 
     def simple_upsampling(self):
-        nn.Sequential(
+        return nn.Sequential(
             self._upsample_block(512, 256),
             self._upsample_block(256, 128),
             nn.Conv2d(128, self.num_classes, 1)
@@ -193,7 +203,7 @@ class SegmentedVGG16(nn.Module):
         if self.skip_connexion:
             x, aux_out = self.skip_connexion_decoder(*self.skip_connexion_encoder(x))
             x = self.final_conv(x)
-            aux_out = self.interpolation(x, size=(self.input_height, self.input_width))
+            aux_out = self.interpolation(aux_out, size=(self.input_height, self.input_width))
         else:
             # Heavy compression, Loss details, output (1, 512, 7, 7)
             x = self.encoder(x)
@@ -201,7 +211,8 @@ class SegmentedVGG16(nn.Module):
                 x = self.decoder(x) if self.upsampling else self.classifier(x)
 
         # from cats number to size of the image, Upsampling brutal
-        x = self.interpolation(x, size=(self.input_height, self.input_width))
+        if x.shape[2:] != (self.input_height, self.input_width):
+            x = self.interpolation(x, size=(self.input_height, self.input_width))
         return x, aux_out
 
 

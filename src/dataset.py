@@ -56,3 +56,22 @@ class DatasetVGG16(Dataset):
         mask = mask.to(self.device)
         x_vgg16 = x_vgg16.to(self.device)
         return x_vgg16, mask
+
+
+class DatasetDeepLabV3(DatasetVGG16):
+    transform_rgb = transforms.Compose([
+        transforms.Resize((256, 256)),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        )
+    ])
+    transform_gray = transforms.Compose([
+        transforms.Resize((256, 256)),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.5],
+            std=[0.5]
+        )
+    ])
