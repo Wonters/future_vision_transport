@@ -3,6 +3,18 @@ from torch import nn as nn
 from torch.nn import functional as F
 from torchvision import models
 
+class FocalLoss(nn.Module):
+    """
+    Focal loss
+    """
+    def __init__(self, gamma=2, weight=None, ignore_index=None):
+        super().__init__()
+        self.ce = nn.CrossEntropyLoss(weight=weight, ignore_index=ignore_index)
+        self.gamma = gamma
+    def forward(self, x, target):
+        logp = -self.ce(x, target)
+        p = torch.exp(logp)
+        return -((1 - p) ** self.gamma * logp).mean()
 
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels,
@@ -152,12 +164,12 @@ class SegmentedVGG16(nn.Module):
         :return:
         """
         return nn.Sequential(
-            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2),
             nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
             # Batch normalisation to stabilize
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True),
-            #nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
+            #nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2),
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
         )
 
     def simple_upsampling(self):

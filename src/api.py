@@ -1,4 +1,7 @@
 import base64
+import numpy as np
+from PIL import Image
+import torch
 import logging
 import pickle
 from PIL.PngImagePlugin import PngImageFile
@@ -38,6 +41,7 @@ async def predict(request: Request, image: ImageModel):
     """
     logger.info("Launch prediction")
     pil_image = image.decode()
+    pil_image = Image.fromarray(wrapper.dataset.square_crop(pil_image, left=512).numpy())
     output = wrapper.predict([pil_image])
     return base64.b64encode(pickle.dumps(wrapper.visualize(pil_image, output.cpu().detach().numpy()[0,...])))
 

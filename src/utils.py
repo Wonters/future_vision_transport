@@ -1,6 +1,7 @@
 from PIL import Image
 import numpy as np
 import torch
+import torch.nn.functional as F
 import logging
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,16 @@ LAYER_COLORS = {
  'human': (255,0,0), # red
  'vehicle': (255,0,255) # pink
 }
+def center_crop(img: Image.Image) -> Image.Image:
+    """Crop une image au centre et la resize à (H, W)."""
+    width, height = img.size
+    # Calcul du crop central
+    left = (width - min(width, height)) // 2
+    top = (height - min(width, height)) // 2
+    right = left + min(width, height)
+    bottom = top + min(width, height)
+    img_cropped = img.crop((left, top, right, bottom))
+    return img_cropped
 
 def degrade_png_quality(png_image: Image.Image, quality=10, mode="RGB") -> Image.Image:
     """
@@ -76,7 +87,8 @@ def group_mask_v2(y_mask, with_cat_number:bool=False):
     :return:
     """
     # Lookup table
-    lut = torch.full((256,), -1, dtype=torch.int32, device=y_mask.device)  # suppose que les labels vont de 0 à 255
+    # We guess labels go from 0 to 255
+    lut = torch.full((256,), -1, dtype=torch.int32, device=y_mask.device)
 
     for j, (_, values) in enumerate(CATEGORIES_MASK.items()):
         lut[torch.tensor(values)] = j
@@ -110,6 +122,44 @@ def iou_score(pred, target, eps=1e-6):
     intersection = (pred & target).float().sum()
     union = (pred | target).float().sum()
     return (intersection + eps) / (union + eps)
+
+def compute_iou(logits, target_masks, mean=True, softmax=True):
+    """"""
+    outputs = F.softmax(logits, dim=1) if softmax else logits
+    outputs = outputs.cpu().detach()
+    target_masks = target_masks.cpu().detach()
+    outputs = outputs.permute(0, 2, 3, 1)
+    target_masks = target_masks.permute(0, 2, 3, 1)
+    argmax_indices_pred = torch.argmax(outputs, dim=-1)
+    output_masks = torch.zeros_like(outputs)
+    output_masks.scatter_(dim=3,
+                         index=argmax_indices_pred.unsqueeze(-1),
+                         src=torch.ones_like(argmax_indices_pred,
+                                             dtype=output_masks.dtype).unsqueeze(-1))
+    output_masks = output_masks.to(torch.uint8)
+    target_masks =target_masks.to(torch.uint8)
+    if not mean:
+        argmax_indices_masks = torch.argmax(target_masks, dim=-1)
+        iou = {}
+        for index, name in enumerate(CATEGORIES_MASK):
+            sub_pred = argmax_indices_pred == index
+            sub_target = argmax_indices_masks == index
+            iou[name] = iou_score(sub_pred, sub_target)
+        return iou
+    return iou_score(output_masks, target_masks)
+
+def dice(pred, target, eps=1e-6):
+    """
+    Compute dice score
+    :param pred: probabilities
+    :param target:
+    :param eps:
+    :return:
+    """
+    # pred et target : booléens ou 0/1, même shape
+    intersection = (pred & target).float().sum()
+    union = (pred | target).float().sum()
+    return (2 * intersection + eps) / (union + eps)
 
 
 def load_module(module_name:str = "src.deeplearning", class_name:str= "Unet"):

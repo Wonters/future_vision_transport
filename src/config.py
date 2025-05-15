@@ -1,11 +1,13 @@
 """
 Project configuration
 """
+import sys
 import os
+import torch
 import glob
 import logging
-import logging
 
+DEV=os.environ.get("DEV", False)
 # Configure logging to console output
 logging.basicConfig(
     level=logging.INFO,
@@ -17,7 +19,12 @@ images = glob.glob("data/segmented/leftImg8bit/train/*/*.png")
 masks = glob.glob("data/annotate/gtFine/train/*/*_labelIds.png")
 logging.info(f"Images {len(images)} / Masks {len(masks)}")
 API_ENDPOINT = os.environ.get('API_ENDPOINT', "http://127.0.0.1:8000/predict")
-DEVICE = os.environ.get("DEVICE", "mps")
+if torch.cuda.is_available():
+    DEVICE = os.environ.get("DEVICE", "cuda")
+elif torch.backends.mps.is_available():
+    DEVICE = os.environ.get("DEVICE", "mps")
+else:
+    DEVICE = os.environ.get("DEVICE", "cpu")
 
 WRAPPER_CLASS = os.environ.get('WRAPPER_NAME',
                                'SegmentedUnetWrapper')
@@ -25,5 +32,7 @@ WRAPPER_CONFIG = dict(
     x_data=images,
     y_data=masks,
     distributed=False,
-    frac=0.5,
-    degradation=5)
+    crop=1024,
+    frac=0.01,
+    experiment_name="Segmentation-3",
+    degradation=None)
