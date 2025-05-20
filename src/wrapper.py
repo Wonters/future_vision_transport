@@ -1,5 +1,4 @@
 import logging
-import os
 from tqdm import tqdm
 import random
 import time
@@ -9,13 +8,14 @@ import torch
 from torch.nn import functional as F
 import torch.distributed as dist
 import torch.nn as nn
+from torchmetrics import Precision, Recall
 import mlflow
 from typing import List
 from PIL import Image
 from PIL.PngImagePlugin import PngImageFile
 from torch.utils.data import DistributedSampler, DataLoader, Subset
 from .dataset import DatasetVGG16, DatasetDeepLabV3
-from .deeplearning import DilatedNet, SegmentedVGG16, UNet, DeepLabV3
+from .deeplearning import DilatedNet, SegmentedVGG16, UNet, DeepLabV3, CrossEntropyDiceLoss
 from .utils import compute_iou, CATEGORIES_MASK, LAYER_COLORS
 from .config import DEVICE, DEV
 import warnings
@@ -32,7 +32,7 @@ class SegmentedModelWrapper:
     """
     model_class = SegmentedVGG16
     dataset_class = DatasetVGG16
-    epochs: int = 10
+    epochs: int = 20
     device: str = DEVICE
     batch_size: int = 10
     shuffle: bool = True
@@ -41,7 +41,7 @@ class SegmentedModelWrapper:
     weights = torch.tensor([1.0000, 0.1957, 0.3598, 4.2297, 0.4897, 2.0718, 5.8432, 0.9945],
                            dtype=torch.float32,
                            device=DEVICE)
-    train_head = True
+    train_head = False
     # For development
     mlflow_register: str = "./mlruns_dev"
     num_class = 8
@@ -88,9 +88,8 @@ class SegmentedModelWrapper:
                                              batch_size=self.batch_size,
                                              shuffle=self.shuffle)
 
-        self.criterion = torch.nn.CrossEntropyLoss(weight=self.weights,
-            # ignore_index=0
-        )
+        self.criterion = torch.nn.CrossEntropyLoss(weight=self.weights)
+        # self.criterion = CrossEntropyDiceLoss(alpha=0.5, weight=self.weights, reduction='mean')
         # Training only the head.
         if self.train_head:
             for name, param in self.model.named_parameters():
@@ -107,6 +106,8 @@ class SegmentedModelWrapper:
                                                                     factor=0.5,
                                                                     patience=3,
                                                                     verbose=True)
+        self.prec = Precision(task='multiclass', num_classes=self.num_class, average='macro')
+        self.rec = Recall(task='multiclass', num_classes=self.num_class, average='macro')
 
     def sample_dataset(self, frac=0.1):
         """
@@ -175,13 +176,16 @@ class SegmentedModelWrapper:
             mlflow.log_param('weight_decay', self.weight_decay)
             for epoch in range(self.epochs):
                 self.model.train()
-                self.dataset.random_crop = random.randrange(0, 100), random.randrange(0, 512)
+                self.dataset.random_crop = None #random.randrange(0, 100), random.randrange(0, 512)
                 self.dataset.random_rotation = random.randint(-10, 10)
                 train_loss = np.array([])
-                for images, masks in tqdm(self.dataloader):
+                indexes = list()
+                for images, masks, idx in tqdm(self.dataloader):
+                    indexes.append(idx.numpy().tolist())
                     self.optimizer.zero_grad()
                     self.model.input_height, self.model.input_width = masks.shape[2:]
-                    # Output shape (B, H, W, C)
+                    self.height, self.width = masks.shape[2:]
+                    # Output shape (B, C, H, W)
                     if hasattr(self.model, "aux_head"):
                         logits, aux_logits = self._prediction(images)
                         loss = self.criterion(logits, masks)
@@ -195,6 +199,10 @@ class SegmentedModelWrapper:
                         loss = self.criterion(logits, masks)
                         train_loss = np.concatenate((train_loss, [loss.item()]))
                     iou = compute_iou(logits, masks, mean=False)
+                    preds = torch.argmax(torch.softmax(logits, dim=1).cpu().detach(), dim=1)
+                    target = torch.argmax(masks.cpu().detach(), dim=1)
+                    mlflow.log_metric("precision", self.prec(preds, target))
+                    mlflow.log_metric("recall", self.rec(preds, target))
                     for name, value in iou.items():
                         mlflow.log_metric(f"iou_{name}", float(value))
                     mlflow.log_metric("loss", loss.item())
@@ -212,7 +220,8 @@ class SegmentedModelWrapper:
                 self.model.eval()
                 with torch.no_grad():
                     image = Image.open(self.dataset.images[0])
-                    image = Image.fromarray(self.dataset.square_crop(image, left=512).numpy())
+                    #image = Image.fromarray(self.dataset.square_crop(image, left=512).numpy())
+                    logger.info(self.dataset.images[0])
                     output = self.predict([image])
                     blended_img = self.visualize(image, output.cpu().detach().numpy()[0, ...])
                     mlflow.log_image(blended_img, artifact_file=f"visualisation/visualization-epoch{epoch}.png")

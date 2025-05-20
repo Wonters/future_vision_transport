@@ -104,7 +104,7 @@ class DatasetVGG16(Dataset):
         mask = mask.permute(2, 0, 1)
         mask = mask.to(self.device)
         x_vgg16 = x_vgg16.to(self.device)
-        return x_vgg16, mask
+        return x_vgg16, mask, idx
 
 
 class DatasetDeepLabV3(DatasetVGG16):

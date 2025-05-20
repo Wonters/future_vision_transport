@@ -4,6 +4,7 @@ import pickle
 import base64
 import torch.nn.functional as F
 from pathlib import Path
+from torchmetrics import Precision, Recall
 from fastapi.testclient import TestClient
 from PIL import Image
 from src.wrapper import SegmentedVgg16Wrapper, SegmentedDilatednetWrapper, SegmentedUnetWrapper
@@ -63,6 +64,22 @@ def test_group_mask_3():
     for cat_num, cat_value in enumerate(CATEGORIES_MASK.values()):
         assert np.array_equal(mask_.numpy()[0, ..., cat_num], np.isin(np.array(MASK), cat_value))
 
+def test_precision_recall():
+    prec = Precision(task='multiclass', num_classes=8, average='macro')
+    recal = Recall(task='multiclass', num_classes=8, average='macro')
+    mask = torch.from_numpy(np.array(MASK))
+    mask = mask.unsqueeze(0)
+    mask_ = group_mask_v2(mask)
+    mock_pred = mask_.clone()
+    mock_pred[0, :int(mask_.shape[1] / 2), :, :] = 0
+    mask_ = mask_.permute(0, 3, 1, 2)
+    mock_pred = mock_pred.permute(0, 3, 1, 2)
+    mask_ = mask_.to(torch.float).cpu()
+    mock_pred = mock_pred.to(torch.float).cpu()
+    pred = torch.argmax(mock_pred, dim=1)
+    target = torch.argmax(mask_, dim=1)
+    assert round(prec(pred, target).item(),4) == 0.1400
+    assert round(recal(pred, target).item(),4) == 0.2385
 
 def test_iou_score():
     """
@@ -70,6 +87,7 @@ def test_iou_score():
     """
     mask1 = torch.from_numpy(np.array(MASK))
     mask1 = mask1.unsqueeze(0)
+    mask1 = group_mask_v2(mask1)
     iou = iou_score(mask1, mask1)
     assert iou.item() == 1
 

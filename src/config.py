@@ -15,8 +15,8 @@ logging.basicConfig(
     datefmt="%H:%M:%S"
 )
 
-images = glob.glob("data/segmented/leftImg8bit/train/*/*.png")
-masks = glob.glob("data/annotate/gtFine/train/*/*_labelIds.png")
+images = sorted(glob.glob("data/segmented/leftImg8bit/train/*/*.png"))
+masks = sorted(glob.glob("data/annotate/gtFine/train/*/*_labelIds.png"))
 logging.info(f"Images {len(images)} / Masks {len(masks)}")
 API_ENDPOINT = os.environ.get('API_ENDPOINT', "http://127.0.0.1:8000/predict")
 if torch.cuda.is_available():
@@ -32,7 +32,7 @@ WRAPPER_CONFIG = dict(
     x_data=images,
     y_data=masks,
     distributed=False,
-    crop=1024,
-    frac=0.01,
-    experiment_name="Segmentation-3",
+    crop=0,
+    frac=0.5,
+    experiment_name="Segmentation-prod-2",
     degradation=None)

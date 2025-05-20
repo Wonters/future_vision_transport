@@ -41,7 +41,7 @@ async def predict(request: Request, image: ImageModel):
     """
     logger.info("Launch prediction")
     pil_image = image.decode()
-    pil_image = Image.fromarray(wrapper.dataset.square_crop(pil_image, left=512).numpy())
+    #pil_image = Image.fromarray(wrapper.dataset.square_crop(pil_image, left=512).numpy())
     output = wrapper.predict([pil_image])
     return base64.b64encode(pickle.dumps(wrapper.visualize(pil_image, output.cpu().detach().numpy()[0,...])))
 

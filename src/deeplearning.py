@@ -1,7 +1,9 @@
 import torch
 from torch import nn as nn
 from torch.nn import functional as F
+from torch.nn.modules.loss import _WeightedLoss
 from torchvision import models
+from torchvision.models.segmentation.deeplabv3 import DeepLabHead
 
 class FocalLoss(nn.Module):
     """
@@ -15,6 +17,79 @@ class FocalLoss(nn.Module):
         logp = -self.ce(x, target)
         p = torch.exp(logp)
         return -((1 - p) ** self.gamma * logp).mean()
+
+
+class DiceMultiClassLoss(_WeightedLoss):
+    """
+    Dice Loss pour segmentation multiclasses, avec support de weight et reduction.
+
+    - input: logits, shape (N, C, H, W)
+    - target: labels entiers {0..C-1}, shape (N, H, W)
+
+    Arguments:
+        weight (Tensor, optional): vecteur de taille C pour pondérer chaque classe.
+        smooth (float): terme de lissage.
+        reduction (str): 'none' | 'mean' | 'sum'.
+    """
+
+    def __init__(self, weight: torch.Tensor = None, smooth: float = 1e-6, reduction: str = 'mean'):
+        super().__init__(weight=weight)
+        self.smooth = smooth
+        self.reduction = reduction
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        # softmax pour avoir des probs multiclasses
+        probs = F.softmax(input, dim=1)  # (N, C, H, W)
+        # one-hot des cibles
+        target_one_hot = torch.zeros_like(probs).scatter_(1,
+                                                          target.long(),
+                                                          1.0)  # (N, C, H, W)
+
+        # calcul par classe
+        dims = (0, 2, 3)  # on somme sur batch, H et W → vecteur de taille C
+        intersection = (probs * target_one_hot).sum(dims)
+        union = probs.sum(dims) + target_one_hot.sum(dims)
+
+        dice_score = (2.0 * intersection + self.smooth) / (union + self.smooth)
+        loss_per_class = 1.0 - dice_score  # shape = (C,)
+
+        # application de weight par classe si fourni
+        if self.weight is not None:
+            w = self.weight.to(input.device)
+            loss_per_class = loss_per_class * w
+
+        # reduction
+        if self.reduction == 'mean':
+            return loss_per_class.mean()
+        elif self.reduction == 'sum':
+            return loss_per_class.sum()
+        else:  # 'none'
+            return loss_per_class
+
+
+class CrossEntropyDiceLoss(nn.Module):
+    """
+    Combinaison de CrossEntropyLoss + DiceMultiClassLoss.
+
+    - alpha : poids de la CE (1-alpha pour le Dice).
+    """
+
+    def __init__(self,
+                 alpha: float = 0.5,
+                 weight: torch.Tensor = None,
+                 smooth: float = 1e-6,
+                 reduction: str = 'mean'):
+        super().__init__()
+        # CrossEntropyLoss attend des logits et cibles entières
+        self.ce = nn.CrossEntropyLoss(weight=weight, reduction=reduction)
+        # Dice multiclasses sur les mêmes poids et reduction
+        self.dice = DiceMultiClassLoss(weight=weight, smooth=smooth, reduction=reduction)
+        self.alpha = alpha
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        ce_loss = self.ce(input, target)
+        dice_loss = self.dice(input, target)
+        return self.alpha * ce_loss + (1.0 - self.alpha) * dice_loss
 
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels,
@@ -103,8 +178,9 @@ class DilatedNet(nn.Module):
 class DeepLabV3:
 
     def __new__(cls, *args, **kwargs):
-        model = models.segmentation.deeplabv3_resnet50(pretrained=True)
-        model.classifier = nn.Conv2d(2048, 8, kernel_size=1)
+        model = models.segmentation.deeplabv3_resnet101(pretrained=True)
+        model.classifier = DeepLabHead(2048, num_classes=8)
+        #model.classifier = nn.Conv2d(960, 8, kernel_size=1)
         model.aux_classifier = None
         return model
 
@@ -168,7 +244,6 @@ class SegmentedVGG16(nn.Module):
             # Batch normalisation to stabilize
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True),
-            #nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2),
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
         )
 
