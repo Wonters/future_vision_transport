@@ -2,11 +2,14 @@ services:
   app:
     build:
       context: docker/app/Dockerfile
+    command: ["python", "src/app.py"]
     ports:
       - "7860:7860"
 
   api:
-    image: python:3.11.11-slim
+    build:
+      context: docker/api/Dockerfile
+    entrypoint: ["/usr/bin/supervisord", "-c", "/app/supervisord.conf"]
     command: ["uvicorn", "src.api:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
