@@ -45,6 +45,7 @@ class SegmentedModelWrapper:
     # For development
     mlflow_register: str = "./mlruns_dev"
     num_class = 8
+    checkpoint_dir: Path = Path("checkpoints")
 
     @property
     def model_params(self) -> dict:
@@ -149,7 +150,7 @@ class SegmentedModelWrapper:
         """
         Return the checkpoint directory to store different checkpoints
         """
-        directory = Path("checkpoints") / f"{self.model.__class__.__name__}"
+        directory = self.checkpoint_dir / f"{self.model.__class__.__name__}"
         directory.mkdir(parents=True, exist_ok=True)
         return directory
 

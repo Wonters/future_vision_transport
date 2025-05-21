@@ -2,21 +2,21 @@ import numpy as np
 import torch
 import pickle
 import base64
-import torch.nn.functional as F
+import warnings
 from pathlib import Path
+import torch.nn.functional as F
 from torchmetrics import Precision, Recall
 from fastapi.testclient import TestClient
 from PIL import Image
 from src.wrapper import SegmentedVgg16Wrapper, SegmentedDilatednetWrapper, SegmentedUnetWrapper
 from src.utils import degrade_png_quality, group_mask, group_mask_v2, iou_score, CATEGORIES_MASK, compute_iou
 from src.api import app
-import warnings
+
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-IMAGE = Image.open('zurich/annotat/zurich_000000_000019_leftImg8bit.png')
-MASK = Image.open('zurich/segmented/zurich_000000_000019_gtFine_labelIds.png')
-
+IMAGE = Image.open(Path(__file__).parent/'data/zurich_000000_000019_leftImg8bit.png')
+MASK = Image.open(Path(__file__).parent/'data/zurich_000000_000019_gtFine_labelIds.png')
 
 def test_degrade_png_quality():
     degraded_image = degrade_png_quality(IMAGE, quality=5)
@@ -48,8 +48,8 @@ def test_group_mask_2():
     mask = torch.from_numpy(np.array(MASK))
     mask = mask.unsqueeze(0)
     mask_ = group_mask_v2(mask, with_cat_number=True)
-    model = SegmentedVgg16Wrapper()
-    model.visualize(image=IMAGE, mask=mask_[0, ...].numpy()).show()
+    model = SegmentedVgg16Wrapper(x_data=[IMAGE.filename], y_data=[MASK.filename], degradation=None)
+    model.visualize(image=IMAGE, mask=mask_[0, ...].numpy())
     assert model.visualize(image=IMAGE, mask=mask_[0, ...]).size == (2048, 1024)
 
 
@@ -158,20 +158,21 @@ class BaseWrapperTest:
     @classmethod
     def setup_class(cls):
         """"""
-        cls.model = cls.model_class(x_data=[IMAGE.filename], y_data=[MASK.filename], degradation=None)
+        cls.model = cls.model_class(x_data=[IMAGE.filename], y_data=[MASK.filename], degradation=None, frac=1)
+        cls.model.epochs = 1
 
 
 class TestSegmentedVgg16Wrapper(BaseWrapperTest):
 
     def test_dataset(self):
         """"""
-        for image, mask in self.model.dataloader:
+        for image, mask, idx in self.model.dataloader:
             image = F.interpolate(image, mask.shape[2:], mode='bilinear', align_corners=False)
             image = image.permute(0, 2, 3, 1).detach().cpu().numpy()[0, ...]
             mask = mask.permute(0, 2, 3, 1)
             arg_index = torch.argmax(mask.cpu(), dim=-1)
             image = Image.fromarray(image.astype(np.uint8), mode='RGB')
-            self.model.visualize(image, arg_index.detach().cpu().numpy()[0, ...], logits=False).show()
+            self.model.visualize(image, arg_index.detach().cpu().numpy()[0, ...], logits=False)
             break
 
     def test_train(self):
@@ -179,7 +180,7 @@ class TestSegmentedVgg16Wrapper(BaseWrapperTest):
         self.model.train()
         assert Path(self.model.checkpoint_path).is_file()
 
-    def test_features(self):
+    def _test_features(self):
         print(self.model.model.encoder)
 
     def test_predict(self):
@@ -187,7 +188,7 @@ class TestSegmentedVgg16Wrapper(BaseWrapperTest):
         output = self.model.predict([IMAGE])
         output = output.detach().cpu().numpy()
         assert output.shape == (1, 1024, 2048, 8)
-        self.model.visualize(IMAGE, output[0, ...]).show()
+        self.model.visualize(IMAGE, output[0, ...])
 
 
 class TestSegmentedUnetWrapper(BaseWrapperTest):

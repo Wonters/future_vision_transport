@@ -34,5 +34,5 @@ WRAPPER_CONFIG = dict(
     distributed=False,
     crop=0,
     frac=0.5,
-    experiment_name="Segmentation-prod-2",
+    experiment_name="Segmentation",
     degradation=None)
