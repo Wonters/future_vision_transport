@@ -178,7 +178,7 @@ class TestSegmentedVgg16Wrapper(BaseWrapperTest):
     def test_train(self):
         """"""
         self.model.train()
-        assert Path(self.model.checkpoint_path).is_file()
+        assert Path(self.model.checkpoint_path).is_dir()
 
     def _test_features(self):
         print(self.model.model.encoder)
