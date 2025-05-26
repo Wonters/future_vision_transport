@@ -1,14 +1,16 @@
 services:
   app:
     build:
-      context: docker/app/Dockerfile
+      dockerfile: docker/app/Dockerfile
+      context: .
     command: ["python", "src/app.py"]
     ports:
       - "7860:7860"
 
   api:
     build:
-      context: docker/api/Dockerfile
+      context: .
+      dockerfile: docker/api/Dockerfile
     entrypoint: ["/usr/bin/supervisord", "-c", "/app/supervisord.conf"]
     command: ["uvicorn", "src.api:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
