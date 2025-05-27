@@ -5,5 +5,4 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY . .
-
-ENTRYPOINT ["supervisord", "-c", "supervisord.conf"]
+COPY docker/api/entrypoint.sh /app/entrypoint.sh

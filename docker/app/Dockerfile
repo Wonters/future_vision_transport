@@ -4,6 +4,6 @@ LABEL authors="wonters"
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
-COPY src/app.py .
+COPY . .
 
-ENTRYPOINT ["python", "app.py"]
+ENTRYPOINT ["python","-m", "app.py"]
