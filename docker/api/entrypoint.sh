@@ -1,6 +1,6 @@
 #!/bin/bash
 
 # run the app
-supervisord -c /etc/supervisor/supervisord.conf
+supervisord -c /app/supervisord.conf
 
 exec "$@"
