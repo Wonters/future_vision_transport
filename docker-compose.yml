@@ -5,7 +5,7 @@ services:
       context: .
     command: ["python", "-m", "src.app"]
     environment:
-      - API_ENDPOINT='http://api:8000/predict'
+      - API_ENDPOINT=http://api:8000/predict
     ports:
       - "7860:7860"
 
