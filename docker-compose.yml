@@ -3,7 +3,7 @@ services:
     build:
       dockerfile: docker/app/Dockerfile
       context: .
-    command: ["python", "src/app.py"]
+    command: ["python", "-m", "src.app"]
     environment:
       - API_ENDPOINT='0.0.0.0:7860'
     ports:

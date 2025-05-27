@@ -46,6 +46,8 @@ class SegmentedModelWrapper:
     mlflow_register: str = "./mlruns_dev"
     num_class = 8
     checkpoint_dir: Path = Path("checkpoints")
+    height: int = 1024
+    width: int = 2048
 
     @property
     def model_params(self) -> dict:
@@ -61,7 +63,10 @@ class SegmentedModelWrapper:
                  distributed: bool = False):
         """"""
         self.experiment_name = experiment_name
-        self.width, self.height = Image.open(x_data[0]).size
+        if x_data is None and y_data is None:
+            logger.warning("No data had been configured, can't train.")
+        else:
+            self.width, self.height = Image.open(x_data[0]).size
         if self.width > self.height and crop:
             self.width = crop
         if DEV:
