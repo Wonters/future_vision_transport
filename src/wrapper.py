@@ -269,7 +269,7 @@ class SegmentedModelWrapper:
 
     def load_checkpoint(self):
         try:
-            state_dict = torch.load(self.get_most_recent_checkpoint(), map_location="mps")
+            state_dict = torch.load(self.get_most_recent_checkpoint(), map_location=self.device)
             self.model.load_state_dict(state_dict, strict=False)
             logger.info("Checkpoint loaded")
         except IndexError:
