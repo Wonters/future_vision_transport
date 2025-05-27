@@ -63,7 +63,7 @@ class SegmentedModelWrapper:
                  distributed: bool = False):
         """"""
         self.experiment_name = experiment_name
-        if x_data is None and y_data is None:
+        if not x_data and not y_data:
             logger.warning("No data had been configured, can't train.")
         else:
             self.width, self.height = Image.open(x_data[0]).size
